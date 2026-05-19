@@ -1,0 +1,167 @@
+<!--
+  ============================================================
+  Wazuh Correlation Rules — pfSense Firewall Engineering Lab
+  File: /var/ossec/etc/rules/pfsense-rules.xml
+  Author: Ari Said | Version: 1.4 | Updated: 2026-03-01
+
+  Rule ID range: 100200–100299 (local rules — no conflict with built-in)
+
+  These rules:
+  1. Generate alerts from decoded pfSense filterlog events
+  2. Correlate pfSense blocks with Suricata NIDS alerts
+  3. Detect firewall policy violations and anomalies
+  4. Create composite high-confidence alerts for incident response
+
+  Severity levels (Wazuh):
+    3  = Low (informational)
+    7  = Medium (investigation warranted)
+    10 = High (immediate attention)
+    12 = Critical (active incident)
+  ============================================================
+-->
+
+<group name="pfsense,firewall,">
+
+  <!-- ═══════════════════════════════════════════════════════
+       BASE RULES — Generate alerts from decoded filterlog
+  ═══════════════════════════════════════════════════════ -->
+
+  <!-- 100200: pfSense firewall block event (any) -->
+  <rule id="100200" level="3">
+    <decoded_as>pfsense-firewall-tcp</decoded_as>
+    <field name="action">block</field>
+    <description>pfSense: Firewall blocked TCP connection from $(src_ip):$(src_port) to $(dst_ip):$(dst_port) on $(interface)</description>
+    <group>firewall_block,pfsense,</group>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- 100201: pfSense firewall block — UDP -->
+  <rule id="100201" level="3">
+    <decoded_as>pfsense-firewall-udp</decoded_as>
+    <field name="action">block</field>
+    <description>pfSense: Firewall blocked UDP packet from $(src_ip):$(src_port) to $(dst_ip):$(dst_port) on $(interface)</description>
+    <group>firewall_block,pfsense,</group>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- 100202: pfSense firewall pass event (informational — disabled by default) -->
+  <rule id="100202" level="0">
+    <decoded_as>pfsense-firewall-tcp</decoded_as>
+    <field name="action">pass</field>
+    <description>pfSense: Firewall permitted TCP connection from $(src_ip):$(src_port) to $(dst_ip):$(dst_port)</description>
+    <group>firewall_pass,pfsense,</group>
+    <options>no_full_log</options>
+  </rule>
+
+
+  <!-- ═══════════════════════════════════════════════════════
+       SEVERITY ESCALATION — High-value targets and patterns
+  ═══════════════════════════════════════════════════════ -->
+
+  <!-- 100210: Block targeting Management VLAN (should never happen from WAN) -->
+  <rule id="100210" level="10">
+    <if_sid>100200,100201</if_sid>
+    <field name="dst_ip">10.0.99.</field>
+    <description>pfSense HIGH: Blocked connection targeting Management VLAN (10.0.99.x) from $(src_ip) - possible admin plane attack</description>
+    <group>firewall_block,mgmt_vlan,high_severity,pfsense,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!-- 100211: Block on SSH port (22) from WAN -->
+  <rule id="100211" level="7">
+    <if_sid>100200</if_sid>
+    <field name="dst_port">22</field>
+    <field name="interface">wan</field>
+    <description>pfSense: Blocked SSH attempt from $(src_ip) on WAN interface - brute force or recon</description>
+    <group>firewall_block,ssh_attempt,pfsense,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!-- 100212: IoT VLAN attempting to reach internal RFC1918 (lateral movement blocked) -->
+  <rule id="100212" level="8">
+    <if_sid>100200,100201</if_sid>
+    <field name="interface">opt1</field>
+    <field name="dst_ip" type="pcre2">^(192\.168\.(10|99)\.|10\.0\.(30|40)\.)</field>
+    <description>pfSense HIGH: IoT device $(src_ip) attempting lateral movement to internal VLAN ($(dst_ip)) - blocked by IOT-IN-030</description>
+    <group>firewall_block,iot_lateral_movement,high_severity,pfsense,</group>
+    <mitre>
+      <id>T1021</id>
+    </mitre>
+  </rule>
+
+  <!-- 100213: Brute force threshold — 50+ blocks from same source in 60s -->
+  <rule id="100213" level="10" frequency="50" timeframe="60">
+    <if_matched_sid>100200</if_matched_sid>
+    <same_field>src_ip</same_field>
+    <description>pfSense HIGH: Possible port scan or brute force - $(src_ip) generated 50+ blocked connections in 60 seconds</description>
+    <group>firewall_block,port_scan,brute_force,high_severity,pfsense,</group>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+  </rule>
+
+
+  <!-- ═══════════════════════════════════════════════════════
+       COMPOSITE CORRELATION RULES
+       Correlate pfSense blocks with Suricata NIDS alerts
+       for high-confidence incident detection
+  ═══════════════════════════════════════════════════════ -->
+
+  <!--
+    100220: COMPOSITE — Same source IP blocked by pfSense AND flagged by Suricata
+    This is the highest-confidence alert in the ruleset.
+    When pfSense blocks a connection AND Suricata independently identifies the
+    same source as malicious, this strongly indicates a real threat actor.
+    Timeframe: 300 seconds (5 minutes) — same src_ip in both alert types
+  -->
+  <rule id="100220" level="12" frequency="2" timeframe="300">
+    <if_matched_group>firewall_block</if_matched_group>
+    <if_matched_group>suricata</if_matched_group>
+    <same_field>src_ip</same_field>
+    <description>pfSense+Suricata COMPOSITE ALERT (CRITICAL): Source IP $(src_ip) blocked by firewall AND matched Suricata signature within 5 minutes - high-confidence threat indicator</description>
+    <group>composite_alert,critical_severity,incident_response,pfsense,suricata,</group>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- 100221: pfSense block + pfBlockerNG DNSBL hit from same host -->
+  <rule id="100221" level="10" frequency="2" timeframe="600">
+    <if_matched_group>firewall_block</if_matched_group>
+    <if_matched_group>pfblockerng</if_matched_group>
+    <same_field>src_ip</same_field>
+    <description>pfSense COMPOSITE: Source $(src_ip) blocked by firewall AND flagged by pfBlockerNG threat intelligence within 10 minutes</description>
+    <group>composite_alert,high_severity,threat_intel,pfsense,</group>
+  </rule>
+
+
+  <!-- ═══════════════════════════════════════════════════════
+       CANARY RULES — Detect firewall misconfigurations
+  ═══════════════════════════════════════════════════════ -->
+
+  <!-- 100230: Management VLAN traffic appearing on WAN (misconfiguration canary) -->
+  <rule id="100230" level="12">
+    <decoded_as>pfsense-firewall-tcp</decoded_as>
+    <field name="src_ip" type="pcre2">^10\.0\.99\.</field>
+    <field name="interface">wan</field>
+    <description>CANARY ALERT (CRITICAL): Management VLAN (10.0.99.x) traffic detected on WAN interface - firewall misconfiguration or routing anomaly. Immediate investigation required.</description>
+    <group>canary,misconfiguration,critical_severity,pfsense,</group>
+  </rule>
+
+  <!-- 100231: DMZ host initiating connection to internal LAN (breach indicator) -->
+  <rule id="100231" level="12">
+    <decoded_as>pfsense-firewall-tcp</decoded_as>
+    <field name="src_ip" type="pcre2">^10\.0\.30\.</field>
+    <field name="dst_ip" type="pcre2">^192\.168\.10\.</field>
+    <description>CANARY ALERT (CRITICAL): DMZ host $(src_ip) attempting to initiate connection to Trusted LAN $(dst_ip) - possible breach indicator. DMZ-IN-040 should have blocked this.</description>
+    <group>canary,breach_indicator,critical_severity,pfsense,</group>
+    <mitre>
+      <id>T1210</id>
+    </mitre>
+  </rule>
+
+</group>

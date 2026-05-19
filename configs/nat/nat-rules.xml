@@ -1,0 +1,160 @@
+<?xml version="1.0"?>
+<!--
+  ============================================================
+  pfSense NAT Rules Export — firewall-engineering-lab
+  Generated: 2026-03-01 | pfSense CE 2.7.2
+  Author: Ari Said
+
+  Sections:
+    1. Outbound NAT (masquerade — internal → WAN)
+    2. Port Forwards (DNAT — WAN → internal)
+
+  All RFC1918 internal subnets are translated to the WAN IP
+  for internet egress. Management VLAN has NO outbound NAT rule
+  by design (no internet access).
+  ============================================================
+-->
+<pfsense>
+  <nat>
+
+    <!-- ═══════════════════════════════════════════════════════
+         OUTBOUND NAT RULES (Masquerade)
+         Mode: Hybrid (automatic + manual overrides)
+         Each internal VLAN gets an explicit masquerade rule.
+    ═══════════════════════════════════════════════════════ -->
+
+    <!-- Trusted LAN (VLAN 10) → WAN masquerade -->
+    <outbound>
+      <rule>
+        <interface>wan</interface>
+        <source>
+          <network>192.168.10.0/24</network>
+        </source>
+        <destination>
+          <any></any>
+        </destination>
+        <target></target>  <!-- empty = interface address (WAN IP) -->
+        <staticnatport>0</staticnatport>
+        <descr>NAT-OUT-010 | Trusted LAN (VLAN10) → WAN masquerade | Standard internet egress</descr>
+      </rule>
+    </outbound>
+
+    <!-- IoT (VLAN 20) → WAN masquerade -->
+    <outbound>
+      <rule>
+        <interface>wan</interface>
+        <source>
+          <network>192.168.20.0/24</network>
+        </source>
+        <destination>
+          <not>1</not>
+          <network>192.168.0.0/16</network>
+        </destination>
+        <target></target>
+        <staticnatport>0</staticnatport>
+        <descr>NAT-OUT-020 | IoT (VLAN20) → WAN masquerade | Non-RFC1918 destinations only (firewall rules enforce HTTP/HTTPS restriction)</descr>
+      </rule>
+    </outbound>
+
+    <!-- DMZ (VLAN 30) → WAN masquerade -->
+    <outbound>
+      <rule>
+        <interface>wan</interface>
+        <source>
+          <network>10.0.30.0/24</network>
+        </source>
+        <destination>
+          <any></any>
+        </destination>
+        <target></target>
+        <staticnatport>0</staticnatport>
+        <descr>NAT-OUT-030 | DMZ (VLAN30) → WAN masquerade | For package updates and outbound API calls</descr>
+      </rule>
+    </outbound>
+
+    <!-- Security Lab (VLAN 40) → WAN masquerade -->
+    <outbound>
+      <rule>
+        <interface>wan</interface>
+        <source>
+          <network>10.0.40.0/24</network>
+        </source>
+        <destination>
+          <any></any>
+        </destination>
+        <target></target>
+        <staticnatport>0</staticnatport>
+        <descr>NAT-OUT-040 | Security Lab (VLAN40) → WAN masquerade | Threat intel feeds, Wazuh updates, package downloads</descr>
+      </rule>
+    </outbound>
+
+    <!-- OpenVPN Tunnel (10.8.0.0/24) → WAN masquerade -->
+    <outbound>
+      <rule>
+        <interface>wan</interface>
+        <source>
+          <network>10.8.0.0/24</network>
+        </source>
+        <destination>
+          <any></any>
+        </destination>
+        <target></target>
+        <staticnatport>0</staticnatport>
+        <descr>NAT-OUT-050 | OpenVPN clients → WAN masquerade | Used when full-tunnel mode is enabled for testing</descr>
+      </rule>
+    </outbound>
+
+    <!--
+      NOTE: Management VLAN (10.0.99.0/24) has NO outbound NAT rule.
+      This is intentional — no internet access from the management plane.
+      Any traffic from 10.0.99.0/24 reaching WAN is a misconfiguration;
+      it will be dropped by pfSense with no translation.
+    -->
+
+
+    <!-- ═══════════════════════════════════════════════════════
+         PORT FORWARD RULES (DNAT — Inbound)
+         WAN inbound → internal destination via NAT
+    ═══════════════════════════════════════════════════════ -->
+
+    <!-- NAT-PF-010: HTTPS → DMZ web server -->
+    <rule>
+      <interface>wan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source>
+        <any></any>
+      </source>
+      <destination>
+        <network>wanip</network>
+        <port>443</port>
+      </destination>
+      <target>10.0.30.10</target>
+      <local-port>443</local-port>
+      <associated-rule-id>nat_wan_in_030</associated-rule-id>
+      <descr>NAT-PF-010 | HTTPS inbound → DMZ web server (10.0.30.10:443) | PCI DSS 1.3.1</descr>
+    </rule>
+
+    <!--
+      INTENTIONALLY NOT FORWARDED (security hardening):
+
+      Port 80 (HTTP):
+        Not forwarded. No plain-text web access. All web traffic must use TLS.
+        If HTTP is needed, redirect to HTTPS at the application layer.
+
+      Port 22 (SSH):
+        Not forwarded. SSH access to internal hosts is via OpenVPN tunnel only.
+        Exposing SSH to WAN creates brute-force attack surface.
+
+      Port 3389 (RDP):
+        Not forwarded. Remote desktop via VPN only.
+
+      pfSense GUI (443/8443 on WAN):
+        Not forwarded or accessible from WAN.
+        GUI access restricted to Management VLAN and VPN tunnel clients only.
+        This is a critical hardening step — firewall management plane must not
+        be internet-accessible.
+    -->
+
+  </nat>
+</pfsense>

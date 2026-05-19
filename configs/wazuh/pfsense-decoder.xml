@@ -1,0 +1,57 @@
+<!--
+  ============================================================
+  Wazuh Custom Decoder — pfSense Firewall Log Parser
+  File: /var/ossec/etc/decoders/pfsense-decoder.xml
+  Author: Ari Said | Version: 1.3 | Updated: 2026-03-01
+
+  Parses pfSense filterlog format (pf packet filter logs)
+  forwarded via syslog UDP 514 to the Wazuh Manager.
+
+  pfSense filterlog format (CSV):
+  rule,sub-rule,anchor,tracker,real-interface,reason,action,
+  direction,ip-version,tos,ecn,ttl,id,offset,flags,proto-id,
+  proto,length,src-ip,dst-ip,[tcp fields],[udp fields],[icmp fields]
+
+  Reference: https://docs.netgate.com/pfsense/en/latest/monitoring/logs/raw-filter-format.html
+  ============================================================
+-->
+
+<!-- ═══════════════════════════════════════════════════════════
+     DECODERS
+     Ordered: parent decoder first, child decoders after
+═══════════════════════════════════════════════════════════ -->
+
+<decoder_list>
+
+  <!-- Parent decoder: Match pfSense filterlog messages -->
+  <decoder name="pfsense">
+    <prematch>filterlog[</prematch>
+    <regex>filterlog\[\d+\]: (\S+)</regex>
+    <order>id</order>
+  </decoder>
+
+  <!-- Child decoder: Parse IPv4 TCP filterlog entries -->
+  <decoder name="pfsense-firewall-tcp">
+    <parent>pfsense</parent>
+    <prematch>filterlog</prematch>
+    <regex>(\d+),(\w*),(\w*),(\d+),(\w+),(\w+),(\w+),(\w+),4,(\S+),\S+,\d+,\d+,\d+,\S+,6,\d+,(\S+),(\S+),(\d+),(\d+),\d+</regex>
+    <order>rule_id,sub_rule,anchor,tracker,interface,reason,action,direction,tos,src_ip,dst_ip,src_port,dst_port</order>
+  </decoder>
+
+  <!-- Child decoder: Parse IPv4 UDP filterlog entries -->
+  <decoder name="pfsense-firewall-udp">
+    <parent>pfsense</parent>
+    <prematch>filterlog</prematch>
+    <regex>(\d+),(\w*),(\w*),(\d+),(\w+),(\w+),(\w+),(\w+),4,(\S+),\S+,\d+,\d+,\d+,\S+,17,\d+,(\S+),(\S+),(\d+),(\d+)</regex>
+    <order>rule_id,sub_rule,anchor,tracker,interface,reason,action,direction,tos,src_ip,dst_ip,src_port,dst_port</order>
+  </decoder>
+
+  <!-- Child decoder: Parse IPv4 ICMP filterlog entries -->
+  <decoder name="pfsense-firewall-icmp">
+    <parent>pfsense</parent>
+    <prematch>filterlog</prematch>
+    <regex>(\d+),(\w*),(\w*),(\d+),(\w+),(\w+),(\w+),(\w+),4,(\S+),\S+,\d+,\d+,\d+,\S+,1,\d+,(\S+),(\S+),(\w+)</regex>
+    <order>rule_id,sub_rule,anchor,tracker,interface,reason,action,direction,tos,src_ip,dst_ip,icmp_type</order>
+  </decoder>
+
+</decoder_list>

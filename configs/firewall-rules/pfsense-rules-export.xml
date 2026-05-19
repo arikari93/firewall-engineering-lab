@@ -1,0 +1,446 @@
+<?xml version="1.0"?>
+<!--
+  ============================================================
+  pfSense Firewall Rule Export — firewall-engineering-lab
+  Generated: 2026-03-01
+  pfSense Version: CE 2.7.2
+  Author: Ari Said
+  
+  STRUCTURE:
+    Each <rule> block maps to one row in docs/FIREWALL_POLICY.md
+    Tags: <descr> = Rule ID + justification
+          <tracker> = Unique rule identifier (pfSense internal)
+          <type>    = pass | block | reject
+          <log>     = 1 (logged) | 0 (not logged)
+  ============================================================
+-->
+<pfsense>
+  <filter>
+
+    <!-- ═══════════════════════════════════════════════════════
+         WAN INTERFACE RULES
+         Default policy: BLOCK ALL INBOUND (implicit deny)
+    ═══════════════════════════════════════════════════════ -->
+
+    <!-- WAN-IN-010: Block RFC1918 spoofed source at WAN -->
+    <rule>
+      <id></id>
+      <tracker>1001</tracker>
+      <type>block</type>
+      <interface>wan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <tag></tag>
+      <tagged></tagged>
+      <max></max>
+      <max-src-nodes></max-src-nodes>
+      <max-src-conn></max-src-conn>
+      <max-src-states></max-src-states>
+      <statetimeout></statetimeout>
+      <statetype>keep state</statetype>
+      <os></os>
+      <source>
+        <network>10.0.0.0/8</network>
+      </source>
+      <destination>
+        <any></any>
+      </destination>
+      <log>1</log>
+      <descr>WAN-IN-010 | Block RFC1918 spoofed source — ingress filtering per RFC 3704 | NIST 3.1.3</descr>
+    </rule>
+
+    <!-- WAN-IN-010b: Block 172.16/12 spoofed -->
+    <rule>
+      <tracker>1002</tracker>
+      <type>block</type>
+      <interface>wan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <source>
+        <network>172.16.0.0/12</network>
+      </source>
+      <destination>
+        <any></any>
+      </destination>
+      <log>1</log>
+      <descr>WAN-IN-010b | Block RFC1918 172.16/12 spoofed source</descr>
+    </rule>
+
+    <!-- WAN-IN-010c: Block 192.168/16 spoofed -->
+    <rule>
+      <tracker>1003</tracker>
+      <type>block</type>
+      <interface>wan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <source>
+        <network>192.168.0.0/16</network>
+      </source>
+      <destination>
+        <any></any>
+      </destination>
+      <log>1</log>
+      <descr>WAN-IN-010c | Block RFC1918 192.168/16 spoofed source</descr>
+    </rule>
+
+    <!-- WAN-IN-030: HTTPS port-forward to DMZ web server -->
+    <rule>
+      <tracker>1004</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source>
+        <any></any>
+      </source>
+      <destination>
+        <address>10.0.30.10</address>
+        <port>443</port>
+      </destination>
+      <log>1</log>
+      <descr>WAN-IN-030 | NAT port-forward — HTTPS inbound to DMZ web server (10.0.30.10) | PCI DSS 1.3.1</descr>
+    </rule>
+
+    <!-- WAN-IN-040: OpenVPN inbound -->
+    <rule>
+      <tracker>1005</tracker>
+      <type>pass</type>
+      <interface>wan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>udp</protocol>
+      <source>
+        <any></any>
+      </source>
+      <destination>
+        <network>wanip</network>
+        <port>1194</port>
+      </destination>
+      <log>1</log>
+      <descr>WAN-IN-040 | OpenVPN road-warrior inbound UDP 1194 | Cert + password auth enforced</descr>
+    </rule>
+
+    <!-- WAN-IN-999: Explicit default deny with logging -->
+    <rule>
+      <tracker>1099</tracker>
+      <type>block</type>
+      <interface>wan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source>
+        <any></any>
+      </source>
+      <destination>
+        <any></any>
+      </destination>
+      <log>1</log>
+      <descr>WAN-IN-999 | EXPLICIT DEFAULT DENY — all other inbound WAN | Log for threat intel review</descr>
+    </rule>
+
+
+    <!-- ═══════════════════════════════════════════════════════
+         LAN (VLAN 10 — TRUSTED) INTERFACE RULES
+    ═══════════════════════════════════════════════════════ -->
+
+    <!-- LAN-IN-010: DNS to pfSense resolver -->
+    <rule>
+      <tracker>2001</tracker>
+      <type>pass</type>
+      <interface>lan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>udp</protocol>
+      <source>
+        <network>lan</network>
+      </source>
+      <destination>
+        <network>lanip</network>
+        <port>53</port>
+      </destination>
+      <log>0</log>
+      <descr>LAN-IN-010 | DNS to pfSense Unbound resolver | Enforces DNS rebinding protection</descr>
+    </rule>
+
+    <!-- LAN-IN-020: NTP -->
+    <rule>
+      <tracker>2002</tracker>
+      <type>pass</type>
+      <interface>lan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>udp</protocol>
+      <source>
+        <network>lan</network>
+      </source>
+      <destination>
+        <network>lanip</network>
+        <port>123</port>
+      </destination>
+      <log>0</log>
+      <descr>LAN-IN-020 | NTP sync to pfSense</descr>
+    </rule>
+
+    <!-- LAN-IN-030: Access to DMZ services -->
+    <rule>
+      <tracker>2003</tracker>
+      <type>pass</type>
+      <interface>lan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source>
+        <network>lan</network>
+      </source>
+      <destination>
+        <network>10.0.30.0/24</network>
+        <port>80-443</port>
+      </destination>
+      <log>0</log>
+      <descr>LAN-IN-030 | LAN access to DMZ web services (HTTP/HTTPS only)</descr>
+    </rule>
+
+    <!-- LAN-IN-040: Block LAN to IoT -->
+    <rule>
+      <tracker>2004</tracker>
+      <type>block</type>
+      <interface>lan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <source>
+        <network>lan</network>
+      </source>
+      <destination>
+        <network>192.168.20.0/24</network>
+      </destination>
+      <log>1</log>
+      <descr>LAN-IN-040 | Block LAN to IoT VLAN — unidirectional isolation | Prevents unauthorized IoT management</descr>
+    </rule>
+
+    <!-- LAN-IN-050: Block LAN to MGMT -->
+    <rule>
+      <tracker>2005</tracker>
+      <type>block</type>
+      <interface>lan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <source>
+        <network>lan</network>
+      </source>
+      <destination>
+        <network>10.0.99.0/24</network>
+      </destination>
+      <log>1</log>
+      <descr>LAN-IN-050 | Block LAN to Management VLAN — admin plane segregation</descr>
+    </rule>
+
+    <!-- LAN-IN-060: Internet egress -->
+    <rule>
+      <tracker>2006</tracker>
+      <type>pass</type>
+      <interface>lan</interface>
+      <ipprotocol>inet</ipprotocol>
+      <source>
+        <network>lan</network>
+      </source>
+      <destination>
+        <not>1</not>
+        <network>10.0.0.0/8</network>
+      </destination>
+      <log>0</log>
+      <descr>LAN-IN-060 | Trusted LAN internet egress (non-RFC1918 destinations)</descr>
+    </rule>
+
+    <!-- LAN-IN-999 -->
+    <rule>
+      <tracker>2099</tracker>
+      <type>block</type>
+      <interface>lan</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <log>1</log>
+      <descr>LAN-IN-999 | Default deny catch-all with logging</descr>
+    </rule>
+
+
+    <!-- ═══════════════════════════════════════════════════════
+         IOT (VLAN 20) INTERFACE RULES
+         Strictest egress policy — internet only, no RFC1918
+    ═══════════════════════════════════════════════════════ -->
+
+    <!-- IOT-IN-010: DNS -->
+    <rule>
+      <tracker>3001</tracker>
+      <type>pass</type>
+      <interface>opt1</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>udp</protocol>
+      <source><network>192.168.20.0/24</network></source>
+      <destination>
+        <network>opt1ip</network>
+        <port>53</port>
+      </destination>
+      <log>0</log>
+      <descr>IOT-IN-010 | DNS to pfSense resolver — controlled resolution, DNSBL enforced</descr>
+    </rule>
+
+    <!-- IOT-IN-020: NTP -->
+    <rule>
+      <tracker>3002</tracker>
+      <type>pass</type>
+      <interface>opt1</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>udp</protocol>
+      <source><network>192.168.20.0/24</network></source>
+      <destination>
+        <network>opt1ip</network>
+        <port>123</port>
+      </destination>
+      <log>0</log>
+      <descr>IOT-IN-020 | NTP sync</descr>
+    </rule>
+
+    <!-- IOT-IN-030: CRITICAL — Block IoT to all RFC1918 -->
+    <rule>
+      <tracker>3003</tracker>
+      <type>block</type>
+      <interface>opt1</interface>
+      <ipprotocol>inet</ipprotocol>
+      <source><network>192.168.20.0/24</network></source>
+      <destination><network>10.0.0.0/8</network></destination>
+      <log>1</log>
+      <descr>IOT-IN-030 | CRITICAL: Block IoT to RFC1918 10/8 — lateral movement prevention | MITRE T1021</descr>
+    </rule>
+
+    <rule>
+      <tracker>3004</tracker>
+      <type>block</type>
+      <interface>opt1</interface>
+      <ipprotocol>inet</ipprotocol>
+      <source><network>192.168.20.0/24</network></source>
+      <destination><network>172.16.0.0/12</network></destination>
+      <log>1</log>
+      <descr>IOT-IN-030b | Block IoT to RFC1918 172.16/12</descr>
+    </rule>
+
+    <rule>
+      <tracker>3005</tracker>
+      <type>block</type>
+      <interface>opt1</interface>
+      <ipprotocol>inet</ipprotocol>
+      <source><network>192.168.20.0/24</network></source>
+      <destination><network>192.168.0.0/16</network></destination>
+      <log>1</log>
+      <descr>IOT-IN-030c | Block IoT to RFC1918 192.168/16 (includes other VLANs on same /16)</descr>
+    </rule>
+
+    <!-- IOT-IN-040: Internet HTTP/HTTPS only -->
+    <rule>
+      <tracker>3006</tracker>
+      <type>pass</type>
+      <interface>opt1</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>192.168.20.0/24</network></source>
+      <destination>
+        <not>1</not>
+        <network>192.168.0.0/16</network>
+        <port>80,443</port>
+      </destination>
+      <log>0</log>
+      <descr>IOT-IN-040 | IoT internet egress — HTTP/HTTPS only for device updates and cloud services</descr>
+    </rule>
+
+    <!-- IOT-IN-999 -->
+    <rule>
+      <tracker>3099</tracker>
+      <type>block</type>
+      <interface>opt1</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <log>1</log>
+      <descr>IOT-IN-999 | Block all other IoT traffic — including non-standard ports</descr>
+    </rule>
+
+
+    <!-- ═══════════════════════════════════════════════════════
+         DMZ (VLAN 30) INTERFACE RULES
+         Receives inbound via NAT; cannot initiate to internal zones
+    ═══════════════════════════════════════════════════════ -->
+
+    <rule>
+      <tracker>4001</tracker>
+      <type>pass</type>
+      <interface>opt2</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>udp</protocol>
+      <source><network>10.0.30.0/24</network></source>
+      <destination><network>opt2ip</network><port>53</port></destination>
+      <log>0</log>
+      <descr>DMZ-IN-010 | DNS</descr>
+    </rule>
+
+    <rule>
+      <tracker>4002</tracker>
+      <type>pass</type>
+      <interface>opt2</interface>
+      <ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>10.0.30.0/24</network></source>
+      <destination>
+        <not>1</not>
+        <network>192.168.0.0/16</network>
+        <port>80,443</port>
+      </destination>
+      <log>0</log>
+      <descr>DMZ-IN-030 | DMZ egress — outbound web for package updates and API calls</descr>
+    </rule>
+
+    <!-- DMZ-IN-040: CRITICAL — No DMZ to internal -->
+    <rule>
+      <tracker>4003</tracker>
+      <type>block</type>
+      <interface>opt2</interface>
+      <ipprotocol>inet</ipprotocol>
+      <source><network>10.0.30.0/24</network></source>
+      <destination><network>192.168.0.0/16</network></destination>
+      <log>1</log>
+      <descr>DMZ-IN-040 | CRITICAL: DMZ cannot initiate to internal zones — breach containment | PCI DSS 1.3.2 | MITRE T1210</descr>
+    </rule>
+
+    <rule>
+      <tracker>4099</tracker>
+      <type>block</type>
+      <interface>opt2</interface>
+      <ipprotocol>inet46</ipprotocol>
+      <source><any></any></source>
+      <destination><any></any></destination>
+      <log>1</log>
+      <descr>DMZ-IN-999 | Default deny</descr>
+    </rule>
+
+
+    <!-- ═══════════════════════════════════════════════════════
+         FLOATING RULES (Global — all interfaces)
+         Process before interface rules
+    ═══════════════════════════════════════════════════════ -->
+
+    <!-- pfBlockerNG inbound IP reputation -->
+    <rule>
+      <tracker>9001</tracker>
+      <type>block</type>
+      <interface>wan</interface>
+      <direction>in</direction>
+      <ipprotocol>inet</ipprotocol>
+      <source><network>pfBlockerNG</network></source>
+      <destination><any></any></destination>
+      <log>1</log>
+      <descr>FLOAT-010 | pfBlockerNG IP reputation — inbound block (Spamhaus DROP, Firehol L1, Feodo Tracker)</descr>
+    </rule>
+
+    <!-- pfBlockerNG outbound C2 block -->
+    <rule>
+      <tracker>9002</tracker>
+      <type>block</type>
+      <interface>wan</interface>
+      <direction>out</direction>
+      <ipprotocol>inet</ipprotocol>
+      <source><any></any></source>
+      <destination><network>pfBlockerNG</network></destination>
+      <log>1</log>
+      <descr>FLOAT-020 | pfBlockerNG outbound block — prevent C2 exfil to known-malicious IPs | MITRE T1071</descr>
+    </rule>
+
+  </filter>
+</pfsense>

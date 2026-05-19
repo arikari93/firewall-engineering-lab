@@ -1,0 +1,183 @@
+# Custom Suricata Detection Rules — pfSense Firewall Engineering Lab
+# File: /usr/local/etc/suricata/rules/lab-custom.rules
+# Loaded by: suricata-update via /usr/local/etc/suricata/suricata.yaml
+# Author: Ari Said
+# Last Updated: 2026-03-01
+#
+# RULE FORMAT:
+#   action proto src_ip src_port direction dst_ip dst_port (options)
+#
+# SID RANGE: 9000001–9000099 (local/custom rules — avoid conflict with ET Open)
+# MITRE ATT&CK tags included where applicable.
+#
+# These rules supplement the Emerging Threats Open ruleset (48,243 signatures)
+# and are tuned specifically for this lab environment.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 1: LATERAL MOVEMENT DETECTION
+# MITRE ATT&CK: TA0008 - Lateral Movement
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Detect IoT device attempting to reach internal RFC1918 hosts
+# Expected behavior: IoT traffic should go internet-only (pfSense blocks it,
+# but this rule catches it at the NIDS level for correlation)
+alert ip 192.168.20.0/24 any -> 192.168.10.0/24 any \
+  (msg:"LAB - IoT VLAN lateral movement attempt to Trusted LAN"; \
+   flow:to_server; \
+   threshold:type limit,track by_src,count 1,seconds 60; \
+   classtype:policy-violation; \
+   sid:9000001; rev:3; \
+   metadata:attack_target Internal_Network, affected_product Any, \
+   deployment Perimeter, signature_severity Major, \
+   created_at 2025_10_01, updated_at 2026_03_01, \
+   mitre_tactic Lateral_Movement, mitre_technique T1021;)
+
+# Detect SMB traffic on non-standard port (potential ransomware lateral movement)
+alert tcp any any -> $HOME_NET !445 \
+  (msg:"LAB - SMB traffic on non-standard port - possible ransomware evasion"; \
+   content:"|ff|SMB"; \
+   threshold:type limit,track by_src,count 3,seconds 120; \
+   classtype:trojan-activity; \
+   sid:9000002; rev:2; \
+   metadata:mitre_tactic Lateral_Movement, mitre_technique T1021_002;)
+
+# Detect port scanning behavior from single source (>20 ports in 10 seconds)
+alert tcp any any -> $HOME_NET any \
+  (msg:"LAB - Potential port scan detected - high port velocity from single source"; \
+   flags:S; \
+   threshold:type threshold,track by_src,count 20,seconds 10; \
+   classtype:attempted-recon; \
+   sid:9000003; rev:2; \
+   metadata:mitre_tactic Discovery, mitre_technique T1046;)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 2: DNS ANOMALY DETECTION
+# MITRE ATT&CK: TA0011 - Command and Control
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Detect DNS tunneling via excessive subdomain length
+# Legitimate FQDNs rarely exceed 50 chars before the TLD
+# DNS tunneling tools (iodine, dnscat2) encode data in subdomain labels
+alert dns any any -> any 53 \
+  (msg:"LAB - Possible DNS tunneling - excessively long subdomain label"; \
+   dns.query; \
+   pcre:"/(?:[a-z0-9-]{30,}\.){2,}/i"; \
+   threshold:type threshold,track by_src,count 5,seconds 60; \
+   classtype:policy-violation; \
+   sid:9000010; rev:4; \
+   metadata:mitre_tactic Command_And_Control, mitre_technique T1071_004;)
+
+# Detect high-frequency DNS queries from single host (possible DGA/C2 beaconing)
+alert dns any any -> any 53 \
+  (msg:"LAB - High-frequency DNS queries - possible DGA or C2 beacon"; \
+   threshold:type threshold,track by_src,count 100,seconds 60; \
+   classtype:policy-violation; \
+   sid:9000011; rev:2; \
+   metadata:mitre_tactic Command_And_Control, mitre_technique T1568_002;)
+
+# Detect DNS query to known-suspicious TLDs (common in malware C2)
+alert dns any any -> any 53 \
+  (msg:"LAB - DNS query to high-risk TLD (.tk .ml .ga .cf .gq)"; \
+   dns.query; \
+   pcre:"/\.(tk|ml|ga|cf|gq)$/i"; \
+   classtype:potentially-bad-traffic; \
+   sid:9000012; rev:2; \
+   metadata:mitre_tactic Command_And_Control, mitre_technique T1071_004;)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 3: CREDENTIAL & EXECUTION DETECTION
+# MITRE ATT&CK: TA0002 - Execution, TA0006 - Credential Access
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Detect PowerShell downloading executable via HTTP
+# Common initial access / dropper pattern
+alert http any any -> any any \
+  (msg:"LAB - PowerShell executable download via HTTP - possible dropper"; \
+   http.user_agent; \
+   content:"PowerShell"; nocase; \
+   http.uri; \
+   pcre:"/\.(exe|dll|ps1|bat|msi|vbs|hta)(\?|$)/i"; \
+   classtype:trojan-activity; \
+   sid:9000020; rev:3; \
+   metadata:mitre_tactic Execution, mitre_technique T1059_001;)
+
+# Detect Base64-encoded PowerShell execution (common obfuscation)
+alert http any any -> any any \
+  (msg:"LAB - Base64-encoded PowerShell command in HTTP - obfuscation detected"; \
+   http.uri; \
+   pcre:"/[Ee][Nn][Cc][Oo][Dd][Ee][Dd][Cc][Oo][Mm][Mm][Aa][Nn][Dd]/"; \
+   classtype:trojan-activity; \
+   sid:9000021; rev:2; \
+   metadata:mitre_tactic Defense_Evasion, mitre_technique T1027;)
+
+# Detect NTLM authentication over cleartext HTTP (credential exposure)
+alert http any any -> $HOME_NET any \
+  (msg:"LAB - NTLM authentication over unencrypted HTTP - credential exposure risk"; \
+   http.header; \
+   content:"Authorization: NTLM"; \
+   classtype:policy-violation; \
+   sid:9000022; rev:2; \
+   metadata:mitre_tactic Credential_Access, mitre_technique T1557_001;)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 4: DATA EXFILTRATION DETECTION
+# MITRE ATT&CK: TA0010 - Exfiltration
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Detect large outbound data transfer (>10MB in single flow) on non-standard port
+# Legitimate services (S3, CDN) use 80/443; exfil often uses unusual ports
+alert tcp $HOME_NET any -> !$HOME_NET !80 !443 \
+  (msg:"LAB - Large outbound data transfer on non-standard port - possible exfil"; \
+   flow:to_server,established; \
+   dsize:>10000; \
+   threshold:type threshold,track by_src,count 5,seconds 300; \
+   classtype:policy-violation; \
+   sid:9000030; rev:2; \
+   metadata:mitre_tactic Exfiltration, mitre_technique T1048;)
+
+# Detect outbound ICMP with unusually large payload (ICMP tunneling)
+alert icmp $HOME_NET any -> !$HOME_NET any \
+  (msg:"LAB - Oversized ICMP payload - possible ICMP tunneling for C2 or exfil"; \
+   dsize:>100; \
+   threshold:type threshold,track by_src,count 10,seconds 60; \
+   classtype:policy-violation; \
+   sid:9000031; rev:2; \
+   metadata:mitre_tactic Exfiltration, mitre_technique T1048_003;)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 5: LAB-SPECIFIC POLICY ENFORCEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Alert on any traffic from Management VLAN to WAN (should never happen)
+# This is a canary rule — if it fires, there is a firewall misconfiguration
+alert ip 10.0.99.0/24 any -> !192.168.0.0/16 any \
+  (msg:"LAB - CANARY: Management VLAN traffic reaching WAN - firewall misconfiguration"; \
+   threshold:type limit,track by_src,count 1,seconds 60; \
+   classtype:policy-violation; \
+   priority:1; \
+   sid:9000040; rev:1;)
+
+# Alert on Telnet usage anywhere on the network (cleartext protocol)
+alert tcp any any -> $HOME_NET 23 \
+  (msg:"LAB - Telnet connection detected - cleartext protocol in use"; \
+   flow:to_server,established; \
+   content:"login:"; nocase; \
+   classtype:policy-violation; \
+   sid:9000041; rev:2; \
+   metadata:mitre_tactic Lateral_Movement, mitre_technique T1021;)
+
+# Alert on HTTP (not HTTPS) to external destinations from Trusted LAN
+# Lab policy: all web traffic should be encrypted
+alert http 192.168.10.0/24 any -> !$HOME_NET 80 \
+  (msg:"LAB - Unencrypted HTTP to internet from Trusted LAN - policy violation"; \
+   http.method; \
+   content:"GET"; \
+   threshold:type limit,track by_src,count 3,seconds 300; \
+   classtype:policy-violation; \
+   sid:9000042; rev:1;)
