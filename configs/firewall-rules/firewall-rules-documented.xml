@@ -1,15 +1,25 @@
 <?xml version="1.0"?>
 <!--
   ============================================================
-  pfSense Firewall Rule Export — firewall-engineering-lab
-  Generated: 2026-03-01
-  pfSense Version: CE 2.7.2
-  Author: Ari Said
-  
+  pfSense Firewall Rules — DOCUMENTATION (firewall-engineering-lab)
+  Author: Ari Said | pfSense Version: CE 2.7.2
+
+  WHAT THIS FILE IS:
+    A human-readable, XML-structured representation of the firewall
+    rule base, written to mirror docs/FIREWALL_POLICY.md. It is
+    DOCUMENTATION — not a machine-generated export.
+
+  WHAT THIS FILE IS NOT:
+    This is NOT a restorable pfSense config. A real pfSense rule set
+    lives inside the <filter> section of the full /cf/conf/config.xml
+    and follows pfSense's own schema. To export/restore actual rules,
+    use Diagnostics > Backup & Restore in the pfSense GUI (and see
+    configs/scripts/backup-config.sh for the encrypted backup workflow).
+
   STRUCTURE:
     Each <rule> block maps to one row in docs/FIREWALL_POLICY.md
     Tags: <descr> = Rule ID + justification
-          <tracker> = Unique rule identifier (pfSense internal)
+          <tracker> = local reference number for this documentation
           <type>    = pass | block | reject
           <log>     = 1 (logged) | 0 (not logged)
   ============================================================

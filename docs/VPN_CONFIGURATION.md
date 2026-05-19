@@ -17,12 +17,13 @@ Mode:               Remote Access (SSL/TLS + User Auth)
 Protocol:           UDP on IPv4 only
 Interface:          WAN
 Port:               1194
-TLS Configuration:  TLS Authentication (HMAC packet authentication)
+Control Channel:    tls-crypt (encrypts + authenticates the TLS channel)
 Peer Certificate Authority: Lab-Internal-CA
 Server Certificate: openvpn-server (CN: vpn.lab.internal)
-DH Parameters:      4096-bit
-Encryption Algorithm: AES-256-GCM
-Auth Digest:        SHA512
+Key Exchange:       ECDHE — dh none (no static DH parameters)
+ECDH Curve:         secp384r1
+Data Ciphers:       AES-256-GCM, AES-128-GCM (AEAD)
+Control Auth Digest: SHA256
 Hardware Crypto:    AES-NI CPU-based Acceleration
 TLS Version:        1.3 minimum
 ```
@@ -46,19 +47,23 @@ Block Outside DNS:      Enabled (prevents DNS leaks on Windows)
 
 ```
 Internal CA:        Lab-Internal-CA
-CA Key Length:      4096-bit RSA
+CA Key:             ECDSA P-384 (secp384r1)
 CA Lifetime:        3650 days (10 years)
-Digest Algorithm:   SHA256
+Digest Algorithm:   SHA384
 
 Server Certificate: openvpn-server
-  Key Length:       4096-bit RSA
+  Key:              ECDSA P-384
   Lifetime:         3650 days
   Common Name:      vpn.lab.internal
 
 Client Certificates (one per device):
-  analyst-workstation  | 4096-bit RSA | 365-day lifetime | Issued: 2026-02-01
-  mobile-admin         | 4096-bit RSA | 365-day lifetime | Issued: 2026-02-01
+  analyst-workstation  | ECDSA P-384 | 365-day lifetime | Issued: 2026-02-01
+  mobile-admin         | ECDSA P-384 | 365-day lifetime | Issued: 2026-02-01
 ```
+
+> ECDSA P-384 is chosen over RSA-4096: comparable security strength,
+> smaller keys, faster TLS handshakes, and it enables modern ECDHE key
+> exchange so the OpenVPN server runs with `dh none` (no static DH file).
 
 **Certificate Lifecycle:**
 - Certificates expire annually — calendar reminder set 30 days before expiry
@@ -123,11 +128,12 @@ Key Exchange Version:   IKEv2
 Internet Protocol:      IPv4
 Interface:              WAN
 Remote Gateway:         [VPS public IP]
-Authentication Method:  Mutual PSK + xauth (lab use) / Mutual RSA (production recommendation)
+Authentication Method:  Mutual PSK (lab use; high-entropy key required)
+                        Production recommendation: mutual ECDSA certificates
 
-Encryption Algorithm:   AES-256
-Hash Algorithm:         SHA-256
-DH Group:               14 (2048-bit MODP)
+Encryption Algorithm:   AES-256-GCM (AEAD)
+PRF:                    SHA-384
+Key Exchange Group:     ECP-384 (NIST P-384) — fallback ECP-256
 Lifetime:               28800 seconds (8 hours)
 ```
 
@@ -139,11 +145,14 @@ Local Network:          10.0.40.0/24 (Security Lab — source of monitoring traf
 Remote Network:         10.1.0.0/24 (remote VPS internal range)
 
 Protocol:               ESP
-Encryption Algorithm:   AES-256
-Hash Algorithm:         SHA-256
-PFS Key Group:          14 (2048-bit MODP)
+Encryption Algorithm:   AES-256-GCM (AEAD)
+PFS Key Group:          ECP-384 (NIST P-384)
 Lifetime:               3600 seconds (1 hour)
 ```
+
+> DH Group 14 (modp2048) was replaced with ECP groups (19/20). Group 14
+> is only an acceptable minimum; ECP-384 is the modern target and keeps
+> Phase 1, Phase 2, and OpenVPN on a consistent elliptic-curve baseline.
 
 ### Routing for IPSec
 

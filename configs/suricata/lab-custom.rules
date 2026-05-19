@@ -20,27 +20,42 @@
 # MITRE ATT&CK: TA0008 - Lateral Movement
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Detect IoT device attempting to reach internal RFC1918 hosts
+# Detect IoT device attempting to reach internal RFC1918 hosts.
 # Expected behavior: IoT traffic should go internet-only (pfSense blocks it,
-# but this rule catches it at the NIDS level for correlation)
+# but this rule catches it at the NIDS level for correlation).
+# NOTE: This is an 'ip' rule, so the 'flow' keyword is NOT used — 'flow'
+# requires a flow-tracked transport (tcp/udp). Direction is expressed by
+# the address/port header alone.
 alert ip 192.168.20.0/24 any -> 192.168.10.0/24 any \
   (msg:"LAB - IoT VLAN lateral movement attempt to Trusted LAN"; \
-   flow:to_server; \
    threshold:type limit,track by_src,count 1,seconds 60; \
    classtype:policy-violation; \
-   sid:9000001; rev:3; \
+   sid:9000001; rev:4; \
    metadata:attack_target Internal_Network, affected_product Any, \
    deployment Perimeter, signature_severity Major, \
-   created_at 2025_10_01, updated_at 2026_03_01, \
+   created_at 2025_10_01, updated_at 2026_05_19, \
    mitre_tactic Lateral_Movement, mitre_technique T1021;)
 
-# Detect SMB traffic on non-standard port (potential ransomware lateral movement)
+# Detect SMB traffic on a non-standard port (potential ransomware lateral
+# movement / evasion). Matches both the SMB1 magic (|ff|SMB) and the
+# SMB2/SMB3 magic (|fe|SMB) — modern ransomware almost always uses SMB2/3,
+# so a rule that only checked |ff|SMB would miss its primary target.
 alert tcp any any -> $HOME_NET !445 \
-  (msg:"LAB - SMB traffic on non-standard port - possible ransomware evasion"; \
-   content:"|ff|SMB"; \
+  (msg:"LAB - SMB1 traffic on non-standard port - possible ransomware evasion"; \
+   flow:to_server,established; \
+   content:"|ff|SMB"; offset:4; depth:4; \
    threshold:type limit,track by_src,count 3,seconds 120; \
    classtype:trojan-activity; \
-   sid:9000002; rev:2; \
+   sid:9000002; rev:3; \
+   metadata:mitre_tactic Lateral_Movement, mitre_technique T1021_002;)
+
+alert tcp any any -> $HOME_NET !445 \
+  (msg:"LAB - SMB2/SMB3 traffic on non-standard port - possible ransomware evasion"; \
+   flow:to_server,established; \
+   content:"|fe|SMB"; offset:4; depth:4; \
+   threshold:type limit,track by_src,count 3,seconds 120; \
+   classtype:trojan-activity; \
+   sid:9000003; rev:1; \
    metadata:mitre_tactic Lateral_Movement, mitre_technique T1021_002;)
 
 # Detect port scanning behavior from single source (>20 ports in 10 seconds)
@@ -49,7 +64,7 @@ alert tcp any any -> $HOME_NET any \
    flags:S; \
    threshold:type threshold,track by_src,count 20,seconds 10; \
    classtype:attempted-recon; \
-   sid:9000003; rev:2; \
+   sid:9000004; rev:3; \
    metadata:mitre_tactic Discovery, mitre_technique T1046;)
 
 
@@ -58,28 +73,32 @@ alert tcp any any -> $HOME_NET any \
 # MITRE ATT&CK: TA0011 - Command and Control
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Detect DNS tunneling via excessive subdomain length
-# Legitimate FQDNs rarely exceed 50 chars before the TLD
-# DNS tunneling tools (iodine, dnscat2) encode data in subdomain labels
-alert dns any any -> any 53 \
+# Detect DNS tunneling via excessive subdomain length.
+# Legitimate FQDNs rarely stack multiple 30+ char labels; DNS tunneling
+# tools (iodine, dnscat2) encode payload data in long subdomain labels.
+# NOTE: app-layer 'dns' rules use '-> any any', NOT port 53 — Suricata
+# identifies DNS by protocol parsing, and pinning :53 would miss tunneling
+# over non-standard ports, which is exactly the attacker's goal.
+alert dns any any -> any any \
   (msg:"LAB - Possible DNS tunneling - excessively long subdomain label"; \
    dns.query; \
    pcre:"/(?:[a-z0-9-]{30,}\.){2,}/i"; \
    threshold:type threshold,track by_src,count 5,seconds 60; \
    classtype:policy-violation; \
-   sid:9000010; rev:4; \
+   sid:9000010; rev:5; \
    metadata:mitre_tactic Command_And_Control, mitre_technique T1071_004;)
 
 # Detect high-frequency DNS queries from single host (possible DGA/C2 beaconing)
-alert dns any any -> any 53 \
+alert dns any any -> any any \
   (msg:"LAB - High-frequency DNS queries - possible DGA or C2 beacon"; \
+   dns.query; \
    threshold:type threshold,track by_src,count 100,seconds 60; \
    classtype:policy-violation; \
-   sid:9000011; rev:2; \
+   sid:9000011; rev:3; \
    metadata:mitre_tactic Command_And_Control, mitre_technique T1568_002;)
 
 # Detect DNS query to known-suspicious TLDs (common in malware C2)
-alert dns any any -> any 53 \
+alert dns any any -> any any \
   (msg:"LAB - DNS query to high-risk TLD (.tk .ml .ga .cf .gq)"; \
    dns.query; \
    pcre:"/\.(tk|ml|ga|cf|gq)$/i"; \

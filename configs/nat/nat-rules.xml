@@ -1,9 +1,13 @@
 <?xml version="1.0"?>
 <!--
   ============================================================
-  pfSense NAT Rules Export — firewall-engineering-lab
-  Generated: 2026-03-01 | pfSense CE 2.7.2
-  Author: Ari Said
+  pfSense NAT Rules — DOCUMENTATION (firewall-engineering-lab)
+  Author: Ari Said | pfSense CE 2.7.2
+
+  This is a human-readable, XML-structured representation of the NAT
+  configuration — DOCUMENTATION, not a machine-generated pfSense export.
+  Actual NAT rules live in the full /cf/conf/config.xml; use the pfSense
+  GUI (Diagnostics > Backup & Restore) for restorable exports.
 
   Sections:
     1. Outbound NAT (masquerade — internal → WAN)

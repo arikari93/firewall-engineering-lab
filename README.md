@@ -195,18 +195,24 @@ Pass | VLAN20 | !RFC1918 | 80,443 | "IoT internet access"
 
 **Configuration:**
 - **Protocol:** UDP 1194 (with TCP 443 fallback for restricted networks)
-- **Cipher:** AES-256-GCM with TLS 1.3
+- **Data ciphers:** AES-256-GCM / AES-128-GCM (AEAD), TLS 1.3 control channel
+- **Control channel:** tls-crypt (encrypts + authenticates the TLS channel)
+- **Key exchange:** ECDHE via ECDSA P-384 certificates — `dh none`
 - **Authentication:** Certificate + username/password (two-factor)
 - **DNS Push:** Internal Unbound resolver pushed to clients (split-DNS)
 - **Routing:** Split tunnel — only RFC1918 ranges routed through VPN
+- **Client isolation:** `client-to-client` deliberately omitted — VPN clients cannot reach each other
 
 **Certificate Authority Setup:**
 ```
-CA: Lab-Internal-CA
-  └── Server: openvpn-server (4096-bit RSA, 10yr validity)
-  └── Client: analyst-workstation (4096-bit RSA, 1yr validity)
-  └── Client: mobile-admin (4096-bit RSA, 1yr validity)
+CA: Lab-Internal-CA (ECDSA P-384, 10yr validity)
+  └── Server: openvpn-server (ECDSA P-384, 10yr validity)
+  └── Client: analyst-workstation (ECDSA P-384, 1yr validity)
+  └── Client: mobile-admin (ECDSA P-384, 1yr validity)
 ```
+> ECDSA P-384 is used instead of RSA-4096 — equivalent security with
+> smaller keys and faster handshakes, and it enables `dh none` on the
+> OpenVPN server (modern ECDHE key exchange, no static DH parameters).
 
 **Validation:**
 - Connected from external 4G hotspot — full lab access confirmed
@@ -265,7 +271,9 @@ Content: Firewall events, DHCP, VPN, System
 - pfSense blocks IP → Wazuh cross-references Suricata alert on same IP → composite incident created
 - pfBlockerNG DNSBL hit → Wazuh alert with threat category and requesting host
 
-See [`docs/SIEM_INTEGRATION.md`](docs/SIEM_INTEGRATION.md) for full decoder and rule configuration.
+See [`configs/wazuh/pfsense-decoder.xml`](configs/wazuh/pfsense-decoder.xml)
+and [`configs/wazuh/pfsense-rules.xml`](configs/wazuh/pfsense-rules.xml) for the
+full decoder and correlation rule configuration.
 
 ---
 
@@ -326,11 +334,14 @@ curl telnet://192.168.10.1:22  # Expected: refused
 | FW-009 | SecLab | Any (monitor) | PASS | ✅ |
 | FW-010 | VPN client | LAN (split tunnel) | PASS | ✅ |
 
-### Firewall Rule Audit Script
+### Firewall Log Analysis
 
 ```bash
-# Generate rule summary report from pfSense API
-python3 scripts/audit-report.py --format markdown --output reports/$(date +%Y-%m-%d)-audit.md
+# Parse pfSense filter logs and generate a threat-hunting summary report
+python3 configs/scripts/parse-firewall-logs.py --file filter.log --report
+
+# Top 10 blocked source IPs (threat hunting)
+python3 configs/scripts/parse-firewall-logs.py --file filter.log --action block --top-src 10
 ```
 
 ---
@@ -339,41 +350,40 @@ python3 scripts/audit-report.py --format markdown --output reports/$(date +%Y-%m
 
 ```
 firewall-engineering-lab/
-├── README.md                    # This file
+├── README.md                       # This file
 ├── docs/
-│   ├── FIREWALL_POLICY.md       # Full rule documentation with justifications
-│   ├── VLAN_SEGMENTATION.md     # Network zone design and VLAN config
-│   ├── VPN_CONFIGURATION.md     # OpenVPN + IPSec setup guides
-│   ├── NAT_AND_ROUTING.md       # NAT rules, static routes, policy routing
-│   ├── PATCH_MANAGEMENT.md      # Firmware update SOP and change log
-│   ├── COMPLIANCE_MAPPING.md    # NIST SP 800-41 / CIS Controls alignment
-│   ├── SIEM_INTEGRATION.md      # Wazuh decoder and correlation rules
-│   └── INCIDENT_RESPONSE.md     # IR templates and sample reports
-├── configs/
-│   ├── firewall-rules/
-│   │   ├── wan-rules.md         # WAN interface rules (documented)
-│   │   ├── lan-rules.md         # Trusted LAN rules
-│   │   ├── iot-rules.md         # IoT isolation rules
-│   │   ├── dmz-rules.md         # DMZ rules
-│   │   └── floating-rules.md    # Global floating rules
-│   ├── vlan/
-│   │   └── vlan-design.md       # 802.1Q VLAN assignments and trunk config
-│   ├── vpn/
-│   │   ├── openvpn-server.md    # OpenVPN server parameters
-│   │   └── ipsec-tunnel.md      # IPSec IKEv2 phase 1/2 config
-│   └── nat/
-│       └── nat-rules.md         # Outbound NAT + port forwards
-├── scripts/
-│   ├── parse-firewall-logs.py   # pfSense log parser → structured output
-│   ├── backup-config.sh         # Automated config backup to remote
-│   └── audit-report.py          # Generate compliance audit report
-├── templates/
-│   ├── incident-report.md       # Security incident report template
-│   ├── change-request.md        # Firewall change request template
-│   └── rule-justification.md    # New rule documentation template
-└── media/
-    └── screenshots/             # Dashboard and configuration screenshots
+│   ├── FIREWALL_POLICY.md          # Full rule documentation with justifications
+│   ├── VPN_CONFIGURATION.md        # OpenVPN + IPSec setup guides
+│   ├── NAT_AND_ROUTING.md          # NAT rules, static routes, DNS, DHCP
+│   ├── PATCH_MANAGEMENT.md         # Firmware update SOP and change log
+│   ├── COMPLIANCE_MAPPING.md       # NIST SP 800-41 / CIS Controls alignment
+│   └── INCIDENT_RESPONSE.md        # IR templates and a sample report
+└── configs/
+    ├── firewall-rules/
+    │   └── firewall-rules-documented.xml  # Rule base, XML-structured docs
+    ├── nat/
+    │   └── nat-rules.xml                  # Outbound NAT + port forwards (docs)
+    ├── vlan/
+    │   └── vlan-design.md                 # 802.1Q VLANs, switch + SPAN config
+    ├── vpn/
+    │   ├── openvpn-server.conf            # OpenVPN server config
+    │   ├── client-analyst-workstation.ovpn.example  # Sanitized client template
+    │   └── ipsec-site-to-site.conf        # IPSec IKEv2 Phase 1/2 config
+    ├── suricata/
+    │   └── lab-custom.rules               # Custom NIDS rules (MITRE-mapped)
+    ├── wazuh/
+    │   ├── pfsense-decoder.xml            # pfSense filterlog decoder
+    │   └── pfsense-rules.xml              # Correlation + composite alert rules
+    ├── scripts/
+    │   ├── backup-config.sh               # Encrypted config backup workflow
+    │   └── parse-firewall-logs.py         # pfSense log parser / analyzer
+    └── templates/
+        └── change-request.md              # Firewall change request template
 ```
+
+> **Note:** the `.xml` files under `configs/firewall-rules/` and `configs/nat/`
+> are human-readable *documentation* of the rule base, not restorable pfSense
+> exports. Real config backups are produced by `configs/scripts/backup-config.sh`.
 
 ---
 

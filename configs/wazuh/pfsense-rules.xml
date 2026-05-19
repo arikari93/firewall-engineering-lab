@@ -112,29 +112,56 @@
   ═══════════════════════════════════════════════════════ -->
 
   <!--
-    100220: COMPOSITE — Same source IP blocked by pfSense AND flagged by Suricata
-    This is the highest-confidence alert in the ruleset.
-    When pfSense blocks a connection AND Suricata independently identifies the
-    same source as malicious, this strongly indicates a real threat actor.
-    Timeframe: 300 seconds (5 minutes) — same src_ip in both alert types
+    COMPOSITE CORRELATION — two-stage design.
+
+    Wazuh evaluates one event at a time. A rule can reference exactly ONE
+    prior signal (via a single <if_matched_sid> or <if_matched_group>) and
+    fires when the CURRENT event plus that prior history satisfy
+    <frequency>/<timeframe>/<same_field>. A rule with two <if_matched_*>
+    lines is invalid — Wazuh uses only the last and silently ignores the
+    rest, so the original 100220 never correlated as intended.
+
+    Correct pattern: the composite triggers on the CURRENT event being one
+    signal type, while <if_matched_group> looks back for the OTHER signal
+    with the same src_ip. Two directional rules cover either arrival order.
+
+    Prerequisite: Suricata alerts ingested by Wazuh must extract src_ip into
+    a field named "src_ip" (Wazuh's bundled Suricata/eve.json decoders do
+    this) and carry the group "suricata" so the lookback matches.
   -->
-  <rule id="100220" level="12" frequency="2" timeframe="300">
+
+  <!-- 100220: Suricata alert arrives for a src_ip pfSense already blocked -->
+  <rule id="100220" level="12" frequency="1" timeframe="300">
+    <if_group>suricata</if_group>
     <if_matched_group>firewall_block</if_matched_group>
-    <if_matched_group>suricata</if_matched_group>
     <same_field>src_ip</same_field>
-    <description>pfSense+Suricata COMPOSITE ALERT (CRITICAL): Source IP $(src_ip) blocked by firewall AND matched Suricata signature within 5 minutes - high-confidence threat indicator</description>
+    <description>COMPOSITE (CRITICAL): src_ip $(src_ip) matched a Suricata signature AND was blocked by pfSense within 5 minutes - high-confidence threat indicator</description>
     <group>composite_alert,critical_severity,incident_response,pfsense,suricata,</group>
     <mitre>
       <id>T1190</id>
     </mitre>
   </rule>
 
-  <!-- 100221: pfSense block + pfBlockerNG DNSBL hit from same host -->
-  <rule id="100221" level="10" frequency="2" timeframe="600">
-    <if_matched_group>firewall_block</if_matched_group>
+  <!-- 100222: pfSense block arrives for a src_ip Suricata already flagged
+       (covers the reverse arrival order so detection is order-independent) -->
+  <rule id="100222" level="12" frequency="1" timeframe="300">
+    <if_group>firewall_block</if_group>
+    <if_matched_group>suricata</if_matched_group>
+    <same_field>src_ip</same_field>
+    <description>COMPOSITE (CRITICAL): src_ip $(src_ip) blocked by pfSense AND previously matched a Suricata signature within 5 minutes - high-confidence threat indicator</description>
+    <group>composite_alert,critical_severity,incident_response,pfsense,suricata,</group>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- 100221: pfSense block correlated with a pfBlockerNG threat-intel hit
+       on the same source IP. Single if_matched_group — valid as written. -->
+  <rule id="100221" level="10" frequency="1" timeframe="600">
+    <if_group>firewall_block</if_group>
     <if_matched_group>pfblockerng</if_matched_group>
     <same_field>src_ip</same_field>
-    <description>pfSense COMPOSITE: Source $(src_ip) blocked by firewall AND flagged by pfBlockerNG threat intelligence within 10 minutes</description>
+    <description>COMPOSITE: src_ip $(src_ip) blocked by pfSense AND flagged by pfBlockerNG threat intelligence within 10 minutes</description>
     <group>composite_alert,high_severity,threat_intel,pfsense,</group>
   </rule>
 
